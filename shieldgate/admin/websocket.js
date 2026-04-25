@@ -4,6 +4,8 @@ const Redis = require('ioredis');
 const redis = require('../gateway/utils/redis');
 const stats = require('../gateway/utils/stats');
 const ruleStats = require('../gateway/utils/ruleStats');
+const { parseToken } = require('./auth/middleware');
+const { verify } = require('./auth/jwt');
 
 const SUB_URL = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
 
@@ -49,7 +51,26 @@ function safeParse(s) {
 }
 
 function setupWebSocket(server) {
-  const wss = new WebSocket.Server({ server, path: '/ws' });
+  // 在 upgrade 阶段校验 cookie / Authorization 中的 JWT，未通过直接 401 关闭
+  const wss = new WebSocket.Server({ noServer: true });
+
+  server.on('upgrade', (req, socket, head) => {
+    if (req.url !== '/ws' && !req.url?.startsWith('/ws?')) {
+      socket.destroy();
+      return;
+    }
+    const token = parseToken(req);
+    const payload = token ? verify(token) : null;
+    if (!payload) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      ws.user = payload;
+      wss.emit('connection', ws, req);
+    });
+  });
 
   wss.on('connection', async (ws) => {
     try {

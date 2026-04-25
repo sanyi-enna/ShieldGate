@@ -1,6 +1,7 @@
 <template>
   <a-config-provider :theme="{ token: { colorPrimary: '#4a9eff', colorBgBase: '#0b0e14' } }">
-    <div class="sg-layout">
+    <router-view v-if="$route.meta?.noLayout" />
+    <div v-else class="sg-layout">
       <aside class="sg-sider">
         <div class="sg-brand">
           <img src="/favicon.svg" alt="logo" />
@@ -35,15 +36,19 @@
         </nav>
 
         <div class="sg-sider-bottom">
-          <div class="sg-nav-item">
+          <div class="sg-nav-item" @click="changePwdOpen = true">
             <Icon name="settings" class="icon" />
-            <span>设置</span>
+            <span>修改密码</span>
+          </div>
+          <div class="sg-nav-item" @click="onLogout">
+            <Icon name="unlock" class="icon" />
+            <span>退出登录</span>
           </div>
           <div class="sg-user">
-            <div class="avatar">S</div>
+            <div class="avatar">{{ avatarLetter }}</div>
             <div class="info">
-              <div class="nm">SecOps</div>
-              <div class="role">管理员</div>
+              <div class="nm">{{ user?.sub || user?.username || '未登录' }}</div>
+              <div class="role">{{ user?.role || '—' }}</div>
             </div>
           </div>
         </div>
@@ -195,17 +200,48 @@
           <router-view />
         </div>
       </main>
+
+      <a-modal
+        v-model:open="changePwdOpen"
+        title="修改密码"
+        :ok-text="changing ? '提交中…' : '确认修改'"
+        cancel-text="取消"
+        :confirm-loading="changing"
+        @ok="onChangePwd"
+      >
+        <div class="form-row">
+          <label>原密码</label>
+          <input type="password" v-model="pwdForm.oldPassword" maxlength="128" />
+        </div>
+        <div class="form-row">
+          <label>新密码（至少 8 位）</label>
+          <input type="password" v-model="pwdForm.newPassword" maxlength="128" minlength="8" />
+        </div>
+        <div class="form-row">
+          <label>确认新密码</label>
+          <input type="password" v-model="pwdForm.confirm" maxlength="128" />
+        </div>
+      </a-modal>
     </div>
   </a-config-provider>
 </template>
 
 <script setup>
-import { provide, computed, ref, onMounted, onUnmounted } from 'vue';
+import { provide, computed, ref, reactive, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { message } from 'ant-design-vue';
 import Icon from './components/Icon.vue';
 import { useWebSocket } from './composables/useWebSocket';
 import { createSearch } from './composables/useSearch';
 import { createNotifications } from './composables/useNotifications';
+import { useAuth } from './composables/useAuth';
+
+const { user, logout } = useAuth();
+const avatarLetter = computed(() => (user.value?.sub || user.value?.username || 'S').slice(0, 1).toUpperCase());
+
+const changePwdOpen = ref(false);
+const changing = ref(false);
+const pwdForm = reactive({ oldPassword: '', newPassword: '', confirm: '' });
 
 const wsUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
 const ws = useWebSocket(wsUrl);
@@ -398,4 +434,34 @@ onUnmounted(() => {
 });
 
 function refresh() { location.reload(); }
+
+async function onLogout() {
+  await logout();
+  router.replace('/login');
+}
+
+async function onChangePwd() {
+  if (pwdForm.newPassword.length < 8) {
+    message.error('新密码至少 8 位');
+    return;
+  }
+  if (pwdForm.newPassword !== pwdForm.confirm) {
+    message.error('两次输入的新密码不一致');
+    return;
+  }
+  changing.value = true;
+  try {
+    const { api } = await import('./api');
+    await api.changePassword(pwdForm.oldPassword, pwdForm.newPassword);
+    message.success('密码已更新，下次登录请使用新密码');
+    changePwdOpen.value = false;
+    pwdForm.oldPassword = '';
+    pwdForm.newPassword = '';
+    pwdForm.confirm = '';
+  } catch (err) {
+    message.error(err.response?.data?.error || '修改失败');
+  } finally {
+    changing.value = false;
+  }
+}
 </script>

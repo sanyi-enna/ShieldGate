@@ -8,15 +8,36 @@ const bansRouter = require('./routes/bans');
 const configRouter = require('./routes/config');
 const whitelistRouter = require('./routes/whitelist');
 const rulesRouter = require('./routes/rules');
+const authRouter = require('./routes/auth');
+const { requireAuth, parseToken } = require('./auth/middleware');
+const { verify } = require('./auth/jwt');
 
 const PORT = Number(process.env.PORT || 8081);
 
 const app = express();
 app.disable('x-powered-by');
-app.use(cors());
+app.use(cors({
+  origin: (origin, cb) => cb(null, true),     // 同源部署时无 origin；如需限制改成白名单
+  credentials: true,
+}));
 app.use(express.json({ limit: '64kb' }));
 
+// /api/auth/me 需要在 requireAuth 之前回填 req.user
+app.use((req, _res, next) => {
+  const t = parseToken(req);
+  if (t) {
+    const p = verify(t);
+    if (p) req.user = p;
+  }
+  next();
+});
+
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'shieldgate-admin' }));
+
+app.use('/api/auth', authRouter);
+
+// 之后的所有 /api/* 都要登录 + CSRF 校验
+app.use('/api', requireAuth);
 
 app.use('/api/stats', statsRouter);
 app.use('/api/bans', bansRouter);

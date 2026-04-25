@@ -17,6 +17,8 @@
     "build:frontend": "npm --prefix frontend run build"
   },
   "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie": "^0.6.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "http-proxy-middleware": "^3.0.0",
