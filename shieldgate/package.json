@@ -1,0 +1,33 @@
+{
+  "name": "shieldgate",
+  "version": "1.0.0",
+  "description": "ShieldGate - 轻量级 Web 应用层抗拒绝服务网关",
+  "private": true,
+  "main": "gateway/index.js",
+  "scripts": {
+    "start:gateway": "node gateway/index.js",
+    "start:admin": "node admin/index.js",
+    "start:backend": "node backend/index.js",
+    "dev:gateway": "nodemon gateway/index.js",
+    "dev:admin": "nodemon admin/index.js",
+    "dev:all": "concurrently -n GW,ADMIN,BACKEND -c green,blue,yellow \"npm:dev:gateway\" \"npm:dev:admin\" \"npm:start:backend\"",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop ecosystem.config.js",
+    "pm2:restart": "pm2 restart ecosystem.config.js",
+    "build:frontend": "npm --prefix frontend run build"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "http-proxy-middleware": "^3.0.0",
+    "ioredis": "^5.4.1",
+    "ws": "^8.17.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
