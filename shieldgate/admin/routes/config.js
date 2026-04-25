@@ -5,9 +5,11 @@ router.get('/', async (_req, res) => {
   await config.refreshFromRedis();
   const view = {};
   for (const k of config.numericKeys) view[k] = config[k];
+  for (const k of config.arrayKeys) view[k] = config[k];
   view.BACKEND_URL = config.BACKEND_URL;
   view.SUSPICIOUS_UA_RATE_FACTOR = config.SUSPICIOUS_UA_RATE_FACTOR;
   view.SUSPICIOUS_UA_CONN_FACTOR = config.SUSPICIOUS_UA_CONN_FACTOR;
+  view.MAX_HEADERS_COUNT = config.MAX_HEADERS_COUNT;
   res.json(view);
 });
 
@@ -16,8 +18,9 @@ router.put('/', async (req, res) => {
   const applied = {};
   const errors = [];
 
+  const known = new Set([...config.numericKeys, ...config.arrayKeys]);
   for (const [key, value] of Object.entries(updates)) {
-    if (!config.numericKeys.includes(key)) {
+    if (!known.has(key)) {
       errors.push({ key, error: 'unknown key' });
       continue;
     }
@@ -40,6 +43,10 @@ router.put('/', async (req, res) => {
 router.post('/reset', async (_req, res) => {
   const redis = require('../../gateway/utils/redis');
   for (const k of config.numericKeys) {
+    await redis.del(`config:${k}`);
+    config[k] = config.defaults[k];
+  }
+  for (const k of config.arrayKeys) {
     await redis.del(`config:${k}`);
     config[k] = config.defaults[k];
   }

@@ -1,3 +1,5 @@
+const ruleStats = require('../utils/ruleStats');
+
 const SUSPICIOUS_PATTERNS = [
   'python-requests',
   'python-urllib',
@@ -12,17 +14,27 @@ const SUSPICIOUS_PATTERNS = [
   'java/',
   'node-fetch',
   'axios/',
+  'masscan',
+  'nmap',
+  'sqlmap',
+  'nikto',
+  'wpscan',
+  'fuzz',
+  'gobuster',
 ];
 
 const BROWSER_SIGNALS = ['mozilla', 'webkit', 'gecko', 'chrome', 'safari', 'firefox', 'edge', 'opera'];
 
 function uaCheck(req, _res, next) {
+  if (req.isWhitelisted) return next();
+
   const raw = req.headers['user-agent'] || '';
   const ua = raw.toLowerCase();
 
   if (!ua) {
     req.isSuspiciousUA = true;
     req.uaReason = 'empty_ua';
+    ruleStats.bump('ua');
     return next();
   }
 
@@ -30,6 +42,7 @@ function uaCheck(req, _res, next) {
   if (matched) {
     req.isSuspiciousUA = true;
     req.uaReason = `matched:${matched}`;
+    ruleStats.bump('ua');
     return next();
   }
 
@@ -37,6 +50,7 @@ function uaCheck(req, _res, next) {
   if (!hasBrowserSignal) {
     req.isSuspiciousUA = true;
     req.uaReason = 'no_browser_signal';
+    ruleStats.bump('ua');
     return next();
   }
 

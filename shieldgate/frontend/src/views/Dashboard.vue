@@ -73,15 +73,10 @@
 
       <div class="panel">
         <div class="panel-header">
-          <div class="panel-title">中间件状态</div>
+          <div class="panel-title">规则命中分布</div>
+          <div class="panel-extra">实时累计</div>
         </div>
-        <div class="src-list">
-          <div v-for="m in middlewareStatus" :key="m.name" :class="['src-row', m.cls]">
-            <span class="dot"></span>
-            <span class="name">{{ m.name }}</span>
-            <span :class="['val', m.warn ? 'warn' : '']">{{ m.value }}</span>
-          </div>
-        </div>
+        <RuleHits :hits="ruleHits" />
       </div>
     </div>
 
@@ -104,7 +99,7 @@
           </thead>
           <tbody>
             <tr v-for="b in topRiskIps" :key="b.time + b.ip">
-              <td class="mono" style="color:#4a9eff;">{{ b.ip }}</td>
+              <td class="mono" style="color:#4a9eff;"><Highlight :text="b.ip" /></td>
               <td>
                 <span :class="['tag', tagFor(b.reason)]">{{ b.reason }}</span>
               </td>
@@ -136,7 +131,7 @@
             </div>
             <div class="tl-body">
               <div class="tl-title">
-                {{ a.type }} · <span class="text-mono" style="color:#4a9eff;">{{ a.ip }}</span>
+                <Highlight :text="a.type" /> · <span class="text-mono" style="color:#4a9eff;"><Highlight :text="a.ip" /></span>
               </div>
               <div class="tl-meta">{{ shortReason(a.reason) }} · {{ fmtFull(a.time) }}</div>
             </div>
@@ -154,11 +149,20 @@ import MetricCard from '../components/MetricCard.vue';
 import RealtimeChart from '../components/RealtimeChart.vue';
 import Donut from '../components/Donut.vue';
 import Icon from '../components/Icon.vue';
+import RuleHits from '../components/RuleHits.vue';
+import Highlight from '../components/Highlight.vue';
 
 const ws = inject('shieldgate-ws');
+const search = inject('shieldgate-search', null);
 const stats = ws.stats;
 const recentBans = ws.recentBans;
 const attacks = ws.attacks;
+const ruleHits = computed(() => stats.value?.ruleHits || {});
+
+function passSearch(record, fields) {
+  if (!search?.filter.value) return true;
+  return search.match(record, fields);
+}
 
 const totalSeries = computed(() => stats.value?.history || []);
 const blockedSeries = computed(() => stats.value?.blockedHistory || []);
@@ -209,21 +213,12 @@ function countByReason(bans) {
   return c;
 }
 
-const middlewareStatus = computed(() => {
-  const blocked = stats.value?.blocked || 0;
-  const total = stats.value?.total || 0;
-  const ratio = total ? ((blocked / total) * 100).toFixed(2) : '0.00';
-  return [
-    { name: 'blacklistCheck', value: '运行中', cls: 'ok' },
-    { name: 'uaCheck', value: '运行中', cls: 'ok' },
-    { name: 'connectionLimit', value: '运行中', cls: 'ok' },
-    { name: 'slowlorisDetect', value: '运行中', cls: 'ok' },
-    { name: 'rateLimiter', value: `命中率 ${ratio}%`, cls: 'ok', warn: parseFloat(ratio) > 30 },
-    { name: 'reverse-proxy', value: '已转发', cls: 'ok' },
-  ];
+const topRiskIps = computed(() => {
+  const filtered = search?.filter.value
+    ? recentBans.value.filter((b) => search.match(b, [b.ip, b.reason]))
+    : recentBans.value;
+  return filtered.slice(0, 6);
 });
-
-const topRiskIps = computed(() => recentBans.value.slice(0, 6));
 
 function shortReason(r) {
   if (!r) return '—';
@@ -254,8 +249,11 @@ function scoreCls(reason) {
 }
 
 const recentEvents = computed(() => {
-  const list = (attacks.value || []).slice(0, 6);
-  return list;
+  const all = attacks.value || [];
+  const filtered = search?.filter.value
+    ? all.filter((a) => search.match(a, [a.ip, a.type, a.reason]))
+    : all;
+  return filtered.slice(0, 6);
 });
 function tlTone(type) {
   const t = String(type || '').toLowerCase();

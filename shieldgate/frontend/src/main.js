@@ -9,6 +9,7 @@ import Dashboard from './views/Dashboard.vue';
 import Rules from './views/Rules.vue';
 import Bans from './views/Bans.vue';
 import Attacks from './views/Attacks.vue';
+import Whitelist from './views/Whitelist.vue';
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -17,6 +18,7 @@ const router = createRouter({
     { path: '/dashboard', component: Dashboard, meta: { title: '监控大屏' } },
     { path: '/rules', component: Rules, meta: { title: '规则配置' } },
     { path: '/bans', component: Bans, meta: { title: '封禁管理' } },
+    { path: '/whitelist', component: Whitelist, meta: { title: '白名单' } },
     { path: '/attacks', component: Attacks, meta: { title: '攻击事件' } },
   ],
 });

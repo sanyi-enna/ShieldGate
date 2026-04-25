@@ -2,8 +2,8 @@ const WebSocket = require('ws');
 const Redis = require('ioredis');
 
 const redis = require('../gateway/utils/redis');
-const { listBans } = require('../gateway/utils/banIP');
 const stats = require('../gateway/utils/stats');
+const ruleStats = require('../gateway/utils/ruleStats');
 
 const SUB_URL = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
 
@@ -15,9 +15,10 @@ function broadcast(wss, payload) {
 }
 
 async function buildSnapshotPayload() {
-  const [snapStr, banHistory] = await Promise.all([
+  const [snapStr, banHistory, rules] = await Promise.all([
     redis.get(stats.SNAPSHOT_KEY),
     redis.lrange('ban:history', 0, 19),
+    ruleStats.snapshot(),
   ]);
 
   const snapshot = snapStr ? safeParse(snapStr) : emptySnapshot();
@@ -25,7 +26,7 @@ async function buildSnapshotPayload() {
 
   return {
     type: 'stats',
-    data: { ...snapshot, recentBans },
+    data: { ...snapshot, recentBans, ruleHits: rules },
   };
 }
 
@@ -44,11 +45,7 @@ function emptySnapshot() {
 }
 
 function safeParse(s) {
-  try {
-    return JSON.parse(s);
-  } catch (_) {
-    return null;
-  }
+  try { return JSON.parse(s); } catch (_) { return null; }
 }
 
 function setupWebSocket(server) {
