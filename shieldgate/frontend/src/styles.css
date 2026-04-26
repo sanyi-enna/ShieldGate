@@ -514,7 +514,68 @@ mark.sg-mark {
   font-size: 30px; font-weight: 600; color: #e6eaf2;
   margin-bottom: 4px;
 }
-.trend-chart { height: 160px; position: relative; }
+.trend-chart { height: 220px; min-height: 160px; position: relative; }
+.panel-trend { display: flex; flex-direction: column; }
+.panel-trend .trend-chart { flex: 1; height: auto; }
+
+/* 封禁原因分布面板：底部嵌入威胁情报轮播 */
+.panel-bans { display: flex; flex-direction: column; }
+.panel-bans .donut-wrap { flex-shrink: 0; }
+.ti-feed {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #1a1f2c;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.ti-feed-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.ti-feed-title { font-size: 13px; color: #c1c8d5; font-weight: 500; }
+.ti-feed-meta { font-size: 11px; color: #6b7588; font-family: 'SF Mono', Menlo, monospace; }
+.ti-feed-card {
+  background: #0d121b;
+  border: 1px solid #1a1f2c;
+  border-radius: 6px;
+  padding: 10px 12px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 86px;
+}
+.ti-feed-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ti-feed-id { color: #4a9eff; font-size: 12px; text-decoration: none; }
+.ti-feed-id:hover { text-decoration: underline; }
+.ti-feed-summary {
+  color: #8a93a6; font-size: 12px; line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.ti-feed-empty {
+  color: #6b7588; font-size: 12px; text-align: center;
+  padding: 24px 8px;
+  background: #0d121b; border: 1px dashed #1f2633; border-radius: 6px;
+  flex: 1;
+}
+.ti-feed-more {
+  margin-top: 8px;
+  align-self: flex-end;
+  color: #6b7588; font-size: 11px; text-decoration: none;
+}
+.ti-feed-more:hover { color: #4a9eff; }
+.ti-fade-enter-active, .ti-fade-leave-active { transition: opacity .35s ease; }
+.ti-fade-enter-from, .ti-fade-leave-to { opacity: 0; }
+
+/* 严重等级徽标（与威胁情报页共用） */
+.ti-sev { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 500; white-space: nowrap; }
+.ti-sev.sev-critical { background: rgba(245,71,91,0.15); color: #f5475b; }
+.ti-sev.sev-high     { background: rgba(245,158,11,0.15); color: #f59e0b; }
+.ti-sev.sev-medium   { background: rgba(250,204,21,0.15); color: #facc15; }
+.ti-sev.sev-low      { background: rgba(74,158,255,0.15); color: #4a9eff; }
+.ti-sev.sev-info     { background: rgba(107,117,136,0.15); color: #8a93a6; }
 
 /* ======== Source list ======== */
 .src-list { display: flex; flex-direction: column; gap: 10px; }
@@ -711,3 +772,113 @@ pre.config-dump {
   font-family: 'SF Mono', Menlo, monospace;
   overflow-x: auto;
 }
+
+/* ======== Ant Design Vue 全局组件暗色主题覆盖 ======== */
+/* 这些组件被 Teleport 到 body，不在 a-config-provider 的子树里，需要全局样式接管 */
+
+/* message 顶部通知（如登录成功） */
+.ant-message .ant-message-notice-content {
+  background: #11161f !important;
+  border: 1px solid #1f2633;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  color: #e6eaf2 !important;
+}
+.ant-message .ant-message-notice-content .ant-message-custom-content > span:not(.anticon) {
+  color: #e6eaf2;
+}
+.ant-message-success .anticon { color: #22c55e; }
+.ant-message-error   .anticon { color: #f5475b; }
+.ant-message-warning .anticon { color: #f59e0b; }
+.ant-message-info    .anticon { color: #4a9eff; }
+
+/* notification 右上角通知 */
+.ant-notification .ant-notification-notice {
+  background: #11161f !important;
+  border: 1px solid #1f2633;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.55);
+}
+.ant-notification .ant-notification-notice-message,
+.ant-notification .ant-notification-notice-description {
+  color: #e6eaf2 !important;
+}
+.ant-notification .ant-notification-notice-close { color: #8a93a6; }
+
+/* popconfirm / popover 气泡（如解封确认） */
+.ant-popover .ant-popover-inner {
+  background: #11161f !important;
+  border: 1px solid #1f2633;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+.ant-popover .ant-popover-arrow::before,
+.ant-popover .ant-popover-arrow::after { background: #11161f; }
+.ant-popover .ant-popover-inner-content,
+.ant-popover .ant-popover-title,
+.ant-popover .ant-popover-message,
+.ant-popover .ant-popover-message-title,
+.ant-popover .ant-popconfirm-title,
+.ant-popover .ant-popconfirm-description,
+.ant-popover .ant-popconfirm-message-title {
+  color: #e6eaf2 !important;
+}
+.ant-popover .ant-popconfirm-message > .anticon,
+.ant-popover .ant-popover-message > .anticon { color: #f59e0b; }
+
+/* 气泡里的按钮 */
+.ant-popover .ant-btn {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+.ant-popover .ant-btn-default {
+  background: transparent;
+  color: #c1c8d5;
+  border-color: #2a3242;
+}
+.ant-popover .ant-btn-default:hover,
+.ant-popover .ant-btn-default:focus {
+  color: #4a9eff;
+  border-color: #4a9eff;
+  background: #15263f;
+}
+.ant-popover .ant-btn-primary {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
+}
+.ant-popover .ant-btn-primary:hover {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+/* Modal（修改密码、Modal.confirm 等） */
+.ant-modal-content {
+  background: #11161f !important;
+  border: 1px solid #1f2633;
+  color: #e6eaf2;
+}
+.ant-modal-header {
+  background: #11161f !important;
+  border-bottom: 1px solid #1f2633;
+}
+.ant-modal-title { color: #e6eaf2 !important; }
+.ant-modal-body { color: #c1c8d5; }
+.ant-modal-footer { border-top: 1px solid #1f2633; }
+.ant-modal-close { color: #8a93a6; }
+.ant-modal-close:hover { color: #e6eaf2; }
+.ant-modal-confirm-title,
+.ant-modal-confirm-content { color: #e6eaf2 !important; }
+
+/* 弹层中的 input（密码框等） */
+.ant-modal-body input[type="password"],
+.ant-modal-body input[type="text"],
+.ant-modal-body input[type="number"] {
+  background: #0b0e14;
+  border: 1px solid #1f2633;
+  color: #e6eaf2;
+  border-radius: 6px;
+  padding: 8px 12px;
+  width: 100%;
+  font-size: 13px;
+  outline: none;
+}
+.ant-modal-body input:focus { border-color: #4a9eff; }

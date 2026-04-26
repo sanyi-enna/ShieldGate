@@ -38,8 +38,17 @@ export function useWebSocket(url) {
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
       connected.value = false;
+      // 4401 = 服务器告知 token 过期/未授权，停止自动重连，跳登录
+      if (ev?.code === 4401) {
+        manuallyClosed = true;
+        if (typeof window !== 'undefined') {
+          // 清除可能存在的本地登录态并跳登录
+          window.location.hash = '#/login';
+        }
+        return;
+      }
       if (!manuallyClosed) scheduleReconnect();
     };
     ws.onerror = () => {

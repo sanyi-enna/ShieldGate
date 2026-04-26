@@ -43,7 +43,7 @@
 
     <!-- Three panels: ban distribution, trend chart, source/state list -->
     <div class="panel-grid">
-      <div class="panel">
+      <div class="panel panel-bans">
         <div class="panel-header">
           <div class="panel-title">封禁原因分布</div>
         </div>
@@ -57,9 +57,31 @@
             </div>
           </div>
         </div>
+
+        <!-- 威胁情报轮播 -->
+        <div class="ti-feed">
+          <div class="ti-feed-head">
+            <span class="ti-feed-title">威胁情报</span>
+            <span class="ti-feed-meta" v-if="cveItems.length">
+              {{ cveIndex + 1 }} / {{ cveItems.length }} · CIRCL
+            </span>
+            <span class="ti-feed-meta" v-else>加载中…</span>
+          </div>
+          <transition name="ti-fade" mode="out-in">
+            <div v-if="currentCve" :key="currentCve.id" class="ti-feed-card">
+              <div class="ti-feed-row">
+                <a class="ti-feed-id mono" :href="`https://nvd.nist.gov/vuln/detail/${currentCve.id}`" target="_blank" rel="noreferrer">{{ currentCve.id }}</a>
+                <span :class="['ti-sev', `sev-${currentCve.severity}`]">{{ sevLabel(currentCve.severity) }} · {{ currentCve.cvss?.toFixed ? currentCve.cvss.toFixed(1) : (currentCve.cvss || '—') }}</span>
+              </div>
+              <div class="ti-feed-summary" :title="currentCve.summary">{{ currentCve.summary || '暂无描述' }}</div>
+            </div>
+            <div v-else class="ti-feed-empty">暂无威胁情报</div>
+          </transition>
+          <router-link to="/threat-intel" class="ti-feed-more">查看全部 ›</router-link>
+        </div>
       </div>
 
-      <div class="panel">
+      <div class="panel panel-trend">
         <div class="panel-header">
           <div class="panel-title">流量趋势 — 最近 60 秒</div>
           <div class="panel-extra">每秒刷新</div>
@@ -144,13 +166,14 @@
 </template>
 
 <script setup>
-import { computed, inject } from 'vue';
+import { computed, inject, ref, onMounted, onUnmounted } from 'vue';
 import MetricCard from '../components/MetricCard.vue';
 import RealtimeChart from '../components/RealtimeChart.vue';
 import Donut from '../components/Donut.vue';
 import Icon from '../components/Icon.vue';
 import RuleHits from '../components/RuleHits.vue';
 import Highlight from '../components/Highlight.vue';
+import { api } from '../api';
 
 const ws = inject('shieldgate-ws');
 const search = inject('shieldgate-search', null);
@@ -169,7 +192,8 @@ const blockedSeries = computed(() => stats.value?.blockedHistory || []);
 const peakRps = computed(() => Math.max(0, ...(stats.value?.history || [0])));
 
 const activeBans = computed(() => recentBans.value.filter((b) => (b.ttl || 0) > 0).length);
-const totalBans = computed(() => recentBans.value.length);
+// 累计封禁数：用真实计数器 stats.banned，不再被历史列表 100 上限封顶
+const totalBans = computed(() => stats.value?.banned ?? recentBans.value.length);
 
 const blockRate = computed(() => {
   const t = stats.value?.total || 0;
@@ -277,4 +301,40 @@ function fmtFull(ts) {
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
+
+// —— 威胁情报轮播 ——
+const cveItems = ref([]);
+const cveIndex = ref(0);
+const currentCve = computed(() => cveItems.value[cveIndex.value] || null);
+let rotateTimer = null;
+let refreshTimer = null;
+
+function sevLabel(s) {
+  return ({ critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' })[s] || s;
+}
+
+async function loadCves() {
+  try {
+    const r = await api.getThreatCVEs();
+    const items = (r.items || []).filter((c) => c.id && c.id !== '—');
+    if (items.length) {
+      cveItems.value = items;
+      if (cveIndex.value >= items.length) cveIndex.value = 0;
+    }
+  } catch (_) { /* 静默失败：不打扰大屏 */ }
+}
+
+onMounted(() => {
+  loadCves();
+  // 每 5 秒切换一条
+  rotateTimer = setInterval(() => {
+    if (cveItems.value.length) cveIndex.value = (cveIndex.value + 1) % cveItems.value.length;
+  }, 5000);
+  // 每 5 分钟刷新一次（后端已做 5 分钟缓存）
+  refreshTimer = setInterval(loadCves, 5 * 60 * 1000);
+});
+onUnmounted(() => {
+  if (rotateTimer) clearInterval(rotateTimer);
+  if (refreshTimer) clearInterval(refreshTimer);
+});
 </script>
