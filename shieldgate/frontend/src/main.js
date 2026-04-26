@@ -10,6 +10,7 @@ import Rules from './views/Rules.vue';
 import Bans from './views/Bans.vue';
 import Attacks from './views/Attacks.vue';
 import Whitelist from './views/Whitelist.vue';
+import ThreatIntel from './views/ThreatIntel.vue';
 import Login from './views/Login.vue';
 import { setupAuth } from './composables/useAuth';
 
@@ -23,6 +24,7 @@ const router = createRouter({
     { path: '/bans', component: Bans, meta: { title: '封禁管理' } },
     { path: '/whitelist', component: Whitelist, meta: { title: '白名单' } },
     { path: '/attacks', component: Attacks, meta: { title: '攻击事件' } },
+    { path: '/threat-intel', component: ThreatIntel, meta: { title: '威胁情报' } },
   ],
 });
 

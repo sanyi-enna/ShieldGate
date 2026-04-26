@@ -60,12 +60,19 @@ function pct(v) {
 .rule-hits { display: flex; flex-direction: column; gap: 11px; }
 .rule-row {
   display: grid;
-  grid-template-columns: 130px 1fr 60px;
+  grid-template-columns: minmax(0, 130px) minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
 }
-.rule-info { display: flex; flex-direction: column; gap: 2px; }
-.rule-name { font-size: 13px; font-weight: 500; }
+.rule-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rule-name {
+  font-size: 13px; font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rule-info > span:nth-child(2) {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.rule-bar { min-width: 0; }
 .bar-track {
   width: 100%; height: 6px;
   background: #1a1f2c;
@@ -77,6 +84,9 @@ function pct(v) {
   border-radius: 3px;
   transition: width .3s ease;
 }
-.rule-value { font-size: 13px; color: #e6eaf2; text-align: right; }
+.rule-value {
+  font-size: 13px; color: #e6eaf2; text-align: right;
+  min-width: 56px; white-space: nowrap;
+}
 .muted { color: #6b7588; }
 </style>

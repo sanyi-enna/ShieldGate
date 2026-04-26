@@ -9,6 +9,7 @@ const configRouter = require('./routes/config');
 const whitelistRouter = require('./routes/whitelist');
 const rulesRouter = require('./routes/rules');
 const authRouter = require('./routes/auth');
+const threatIntelRouter = require('./routes/threat-intel');
 const { requireAuth, parseToken } = require('./auth/middleware');
 const { verify } = require('./auth/jwt');
 
@@ -44,6 +45,7 @@ app.use('/api/bans', bansRouter);
 app.use('/api/config', configRouter);
 app.use('/api/whitelist', whitelistRouter);
 app.use('/api/rules', rulesRouter);
+app.use('/api/threat-intel', threatIntelRouter);
 
 app.use((err, _req, res, _next) => {
   console.error('[admin] error:', err);

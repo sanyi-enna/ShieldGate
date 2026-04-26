@@ -11,7 +11,7 @@ body {
 /* ======== Layout ======== */
 .sg-layout {
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 220px minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -121,8 +121,13 @@ body {
   justify-content: space-between;
   padding: 22px 28px 18px 28px;
   gap: 16px;
+  flex-wrap: wrap;
 }
-.sg-pagetitle .t { font-size: 22px; font-weight: 600; color: #e6eaf2; line-height: 1.2; }
+.sg-pagetitle { min-width: 0; flex: 1 1 auto; }
+.sg-pagetitle .t {
+  font-size: 22px; font-weight: 600; color: #e6eaf2; line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .sg-pagetitle .s {
   color: #6b7588;
   font-size: 12px;
@@ -130,6 +135,10 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+.sg-pagetitle .s > span:last-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .sg-pagetitle .live-dot {
   width: 6px; height: 6px; border-radius: 50%;
@@ -146,10 +155,16 @@ body {
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
 }
 .sg-searchbox {
   position: relative;
   width: 320px;
+  max-width: 100%;
+  min-width: 160px;
+  flex: 1 1 auto;
 }
 .sg-searchbox .sg-search-icon {
   position: absolute;
@@ -272,12 +287,13 @@ mark.sg-mark {
   border: 2px solid #0b0e14;
 }
 
-.sg-notifybox { position: relative; }
+.sg-notifybox { position: relative; flex-shrink: 0; }
 .sg-notify-panel {
   position: absolute;
   top: 44px;
   right: 0;
   width: 380px;
+  max-width: calc(100vw - 32px);
   background: #11161f;
   border: 1px solid #1f2633;
   border-radius: 8px;
@@ -441,16 +457,16 @@ mark.sg-mark {
 /* ======== Panel grid ======== */
 .panel-grid {
   display: grid;
-  grid-template-columns: 1fr 1.4fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr);
   gap: 14px;
   margin-bottom: 14px;
 }
 @media (max-width: 1280px) {
-  .panel-grid { grid-template-columns: 1fr 1fr; }
+  .panel-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .panel-grid > :nth-child(3) { grid-column: span 2; }
 }
 @media (max-width: 900px) {
-  .panel-grid { grid-template-columns: 1fr; }
+  .panel-grid { grid-template-columns: minmax(0, 1fr); }
   .panel-grid > :nth-child(3) { grid-column: auto; }
 }
 
@@ -517,11 +533,11 @@ mark.sg-mark {
 /* ======== Bottom row ======== */
 .bottom-row {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   gap: 14px;
 }
 @media (max-width: 1100px) {
-  .bottom-row { grid-template-columns: 1fr; }
+  .bottom-row { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ======== Table ======== */

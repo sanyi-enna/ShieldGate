@@ -54,4 +54,9 @@ export const api = {
   // —— Rules ——
   getRuleHits: () => http.get('/rules/hits').then((r) => r.data),
   resetRuleHits: () => http.post('/rules/hits/reset').then((r) => r.data),
+
+  // —— Threat Intelligence ——
+  getThreatCVEs: () => http.get('/threat-intel/cves').then((r) => r.data),
+  getThreatIOCs: () => http.get('/threat-intel/iocs').then((r) => r.data),
+  getThreatSummary: () => http.get('/threat-intel/summary').then((r) => r.data),
 };

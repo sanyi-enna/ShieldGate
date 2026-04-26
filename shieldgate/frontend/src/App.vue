@@ -256,7 +256,12 @@ provide('shieldgate-search', search);
 const notifications = createNotifications(ws);
 provide('shieldgate-notifications', notifications);
 
-const workspace = '127.0.0.1:8080';
+const workspace = computed(() => {
+  if (typeof location === 'undefined') return '—';
+  const host = location.host || '';
+  // 当前是 hash 路由，如果通过反代进来 host 就是真实访问域名 / IP
+  return host || location.hostname || '—';
+});
 
 const nav = computed(() => [
   { path: '/dashboard', label: '监控大屏', icon: 'dashboard' },
@@ -264,6 +269,7 @@ const nav = computed(() => [
   { path: '/bans', label: '封禁管理', icon: 'ban', badge: stats.value?.banned ? Math.min(stats.value.banned, 99) : null },
   { path: '/whitelist', label: '白名单', icon: 'shield' },
   { path: '/attacks', label: '攻击事件', icon: 'flood' },
+  { path: '/threat-intel', label: '威胁情报', icon: 'globe' },
 ]);
 
 const pageTitle = computed(() => {
@@ -273,14 +279,15 @@ const pageTitle = computed(() => {
     '/bans': '封禁管理',
     '/whitelist': '白名单',
     '/attacks': '攻击事件',
+    '/threat-intel': '威胁情报',
   };
   return map[route.path] || 'ShieldGate';
 });
 
 const pageSub = computed(() => {
-  if (!wsConnected.value) return `${workspace} · 实时连接已断开`;
-  if (search.keyword.value) return `${workspace} · 搜索中："${search.keyword.value}"`;
-  return `${workspace} · 实时监控中`;
+  if (!wsConnected.value) return `${workspace.value} · 实时连接已断开`;
+  if (search.keyword.value) return `${workspace.value} · 搜索中："${search.keyword.value}"`;
+  return `${workspace.value} · 实时监控中`;
 });
 
 const quickShortcuts = [

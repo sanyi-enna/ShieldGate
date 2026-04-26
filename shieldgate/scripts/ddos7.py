@@ -3,7 +3,7 @@ import requests
 import time
 
 # 目标 URL
-target_url = "http://localhost:8080"  # 替换为实际目标地址
+target_url = "http://74.48.61.47:8080"  # 替换为实际目标地址
 requests_per_thread = 5000  # 每线程请求数
 thread_count = 100          # 线程数量
 
