@@ -58,22 +58,26 @@
           </div>
         </div>
 
-        <!-- 威胁情报轮播 -->
+        <!-- 威胁情报：近期恶意 URL / IOC 轮播 -->
         <div class="ti-feed">
           <div class="ti-feed-head">
-            <span class="ti-feed-title">威胁情报</span>
-            <span class="ti-feed-meta" v-if="cveItems.length">
-              {{ cveIndex + 1 }} / {{ cveItems.length }} · CIRCL
+            <span class="ti-feed-title">近期恶意 URL / IOC</span>
+            <span class="ti-feed-meta" v-if="iocItems.length">
+              {{ iocIndex + 1 }} / {{ iocItems.length }} · URLhaus
             </span>
             <span class="ti-feed-meta" v-else>加载中…</span>
           </div>
           <transition name="ti-fade" mode="out-in">
-            <div v-if="currentCve" :key="currentCve.id" class="ti-feed-card">
+            <div v-if="currentIoc" :key="iocKey(currentIoc)" class="ti-feed-card">
               <div class="ti-feed-row">
-                <a class="ti-feed-id mono" :href="`https://nvd.nist.gov/vuln/detail/${currentCve.id}`" target="_blank" rel="noreferrer">{{ currentCve.id }}</a>
-                <span :class="['ti-sev', `sev-${currentCve.severity}`]">{{ sevLabel(currentCve.severity) }} · {{ currentCve.cvss?.toFixed ? currentCve.cvss.toFixed(1) : (currentCve.cvss || '—') }}</span>
+                <span class="ti-feed-id mono">{{ currentIoc.host || extractHost(currentIoc.url) }}</span>
+                <span class="ti-sev sev-high">{{ currentIoc.threat || 'malware_url' }}</span>
               </div>
-              <div class="ti-feed-summary" :title="currentCve.summary">{{ currentCve.summary || '暂无描述' }}</div>
+              <div class="ti-feed-summary mono" :title="currentIoc.url">{{ currentIoc.url }}</div>
+              <div class="ti-feed-tags" v-if="currentIoc.tags?.length || currentIoc.dateadded">
+                <span class="ti-feed-time" v-if="currentIoc.dateadded">{{ fmtIocDate(currentIoc.dateadded) }}</span>
+                <span v-for="t in (currentIoc.tags || []).slice(0, 3)" :key="t" class="ti-feed-tag">{{ t }}</span>
+              </div>
             </div>
             <div v-else class="ti-feed-empty">暂无威胁情报</div>
           </transition>
@@ -302,36 +306,42 @@ function fmtFull(ts) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-// —— 威胁情报轮播 ——
-const cveItems = ref([]);
-const cveIndex = ref(0);
-const currentCve = computed(() => cveItems.value[cveIndex.value] || null);
+// —— 威胁情报：近期恶意 URL / IOC 轮播 ——
+const iocItems = ref([]);
+const iocIndex = ref(0);
+const currentIoc = computed(() => iocItems.value[iocIndex.value] || null);
 let rotateTimer = null;
 let refreshTimer = null;
 
-function sevLabel(s) {
-  return ({ critical: '严重', high: '高危', medium: '中危', low: '低危', info: '信息' })[s] || s;
+function iocKey(it) { return (it.url || '') + '|' + (it.dateadded || ''); }
+function extractHost(u) { try { return new URL(u).hostname; } catch { return u; } }
+function fmtIocDate(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return String(ts).slice(0, 16);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-async function loadCves() {
+async function loadIocs() {
   try {
-    const r = await api.getThreatCVEs();
-    const items = (r.items || []).filter((c) => c.id && c.id !== '—');
+    const r = await api.getThreatIOCs();
+    const items = (r.items || []).filter((it) => it.url || it.host);
     if (items.length) {
-      cveItems.value = items;
-      if (cveIndex.value >= items.length) cveIndex.value = 0;
+      iocItems.value = items;
+      if (iocIndex.value >= items.length) iocIndex.value = 0;
     }
   } catch (_) { /* 静默失败：不打扰大屏 */ }
 }
 
 onMounted(() => {
-  loadCves();
+  loadIocs();
   // 每 5 秒切换一条
   rotateTimer = setInterval(() => {
-    if (cveItems.value.length) cveIndex.value = (cveIndex.value + 1) % cveItems.value.length;
+    if (iocItems.value.length) iocIndex.value = (iocIndex.value + 1) % iocItems.value.length;
   }, 5000);
   // 每 5 分钟刷新一次（后端已做 5 分钟缓存）
-  refreshTimer = setInterval(loadCves, 5 * 60 * 1000);
+  refreshTimer = setInterval(loadIocs, 5 * 60 * 1000);
 });
 onUnmounted(() => {
   if (rotateTimer) clearInterval(rotateTimer);

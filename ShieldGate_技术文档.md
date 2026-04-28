@@ -1,6 +1,6 @@
 # ShieldGate 技术设计文档
 
-> 轻量级 Web 应用层抗拒绝服务网关 · v1.0
+> 轻量级 Web 应用层抗拒绝服务网关 
 
 ---
 
@@ -16,7 +16,6 @@
 8. [演示与攻击模拟](#8-演示与攻击模拟)
 9. [项目目录结构](#9-项目目录结构)
 10. [安全性与局限性分析](#10-安全性与局限性分析)
-11. [三天开发计划](#11-三天开发计划)
 
 ---
 
@@ -63,12 +62,15 @@
   │                             │
   │  ┌─────────────────────┐   │
   │  │     拦截器链         │   │
+  │  │  0. 白名单放行       │   │
   │  │  1. 黑名单检查       │   │
   │  │  2. UA 辅助识别      │   │
-  │  │  3. 并发连接限制     │   │
-  │  │  4. Slowloris 检测   │   │
-  │  │  5. 滑动窗口限流     │   │
-  │  │  6. 动态封禁决策     │   │
+  │  │  3. GeoIP 标记/阻断  │   │
+  │  │  4. 并发连接限制     │   │
+  │  │  5. Slowloris 检测   │   │
+  │  │  6. 请求体大小限制   │   │
+  │  │  7. 滑动窗口限流     │   │
+  │  │  8. 人机校验挑战页   │   │
   │  └────────┬────────────┘   │
   │           │ 合法请求         │
   │  ┌────────▼───────────┐    │
@@ -96,12 +98,16 @@
 
 | 顺序 | 中间件 | 数据来源 | 代价 | 说明 |
 |------|--------|---------|------|------|
+| 0 | `whitelistCheck` | Redis SET + CIDR | 极低 | 命中白名单则标记放行，跳过后续封禁 |
 | 1 | `blacklistCheck` | Redis GET O(1) | 极低 | 最快，封禁 IP 直接拒绝 |
 | 2 | `uaCheck` | 本地字符串匹配 | 极低 | 标记可疑请求，调整后续阈值 |
-| 3 | `connectionLimit` | 内存 Map | 极低 | 同步操作，无 IO |
-| 4 | `slowlorisDetect` | 定时器 | 低 | 异步，不阻塞正常请求 |
-| 5 | `rateLimiter` | Redis Pipeline | 低 | 单次往返，4个命令合并 |
-| 6 | `proxyForward` | http-proxy | 正常 | 通过所有检查才转发 |
+| 3 | `geoTag` | geoip-lite 本地查表 | 极低 | 标记国家/地区；命中 GEO_BLOCK 直接 403 |
+| 4 | `connectionLimit` | 内存 Map | 极低 | 同步操作，无 IO |
+| 5 | `slowlorisDetect` | 定时器 | 低 | 异步，不阻塞正常请求 |
+| 6 | `bodySizeLimit` | Content-Length + 流式累计 | 低 | 静态 + 动态双重拦截，超限封禁 |
+| 7 | `rateLimiter` | Redis Pipeline | 低 | IP 维度 + URL（CC）维度双窗口 |
+| 8 | `challengePage` | HMAC Cookie | 低 | 仅在 `req.shouldChallenge=true` 时拦下 |
+| 9 | `proxyForward` | http-proxy | 正常 | 通过所有检查才转发 |
 
 ### 2.3 技术栈
 
@@ -450,7 +456,81 @@ module.exports = { banIP, unbanIP };
 
 ---
 
-### 3.8 配置文件
+### 3.8 IP/CIDR 白名单（whitelistCheck）
+
+白名单中间件位于链路最前端，命中即给请求打上 `req.isWhitelisted=true`，后续 `bodySizeLimit`、`rateLimiter`、`challengePage` 等都会直接放行。条目支持单 IP 与 CIDR（如 `10.0.0.0/8`），通过管理后台 `/api/whitelist` 持久化在 Redis 中：
+
+```javascript
+// gateway/middleware/whitelistCheck.js
+const whitelist = require('../utils/whitelist');
+
+async function whitelistCheck(req, _res, next) {
+  const ip = getIP(req);
+  const matched = await whitelist.isWhitelisted(ip);
+  if (matched) {
+    req.isWhitelisted = true;
+    req.whitelistRule = matched;   // 命中的规则字符串，便于审计
+  }
+  next();
+}
+```
+
+CIDR 匹配通过 `utils/cidr.js` 工具实现（IPv4/IPv6 双栈），匹配过程在内存中完成，单次成本是常数级。
+
+---
+
+### 3.9 GeoIP 标记与硬阻断（geoTag）
+
+基于 `geoip-lite` 本地数据库（无外网请求）。每个请求被打上 `req.geo = { country, region, timezone }`，并按配置区分两类策略：
+
+| 配置项 | 行为 |
+|--------|------|
+| `GEO_BLOCK = ['KP', 'RU']` | 命中即 403 + 自动封禁 |
+| `GEO_WATCH = ['CN-HK']` | 仅打 `req.isGeoWatched`，限流阈值收紧 |
+
+`geoip-lite` 是可选依赖：缺失时模块自动降级为 no-op，不会影响主链路启动。
+
+---
+
+### 3.10 请求体大小限制（bodySizeLimit）
+
+针对"小连接打大包体"耗尽服务器内存/带宽的场景。两道防线：
+
+1. **静态拦截**：直接读 `Content-Length`，超过 `MAX_BODY_BYTES` 立刻 413 拒绝；
+2. **流式拦截**：监听 `data` 事件累计真实接收字节，超限即调 `req.destroy()` 断开 + `banIP()` 封禁，防止攻击者声明小 Content-Length 实际发大包绕过。
+
+白名单 IP 自动跳过该检测。
+
+---
+
+### 3.11 人机校验挑战页（challengePage）
+
+仅在前置规则给请求打了 `req.shouldChallenge=true` 时才会拦下（典型场景：可疑 UA + 频率接近上限）。返回一段极简 HTML：
+
+- 浏览器执行内联 JS，写入一个由服务端 HMAC 签发的 `sg_chal` Cookie，然后自动 `location.reload()` —— 真实浏览器无感知地通过；
+- 不执行 JS 的攻击脚本无法获得 Cookie，只能反复看到挑战页，被后续限流封禁。
+
+HMAC 的密钥来自 `config.CHALLENGE_SECRET`，按"分钟级时间戳 + IP"派生 token，10 分钟内有效。这是极轻量的 JS 检测，对抗 headless 浏览器需更换为 PoW 或 hCaptcha。
+
+---
+
+### 3.12 后台鉴权（admin/auth）
+
+所有写入类 API 都通过 `requireAuth` 中间件守护，登录态以 HttpOnly + SameSite=Lax 的 JWT Cookie 形式下发：
+
+| 模块 | 作用 |
+|------|------|
+| `auth/jwt.js` | HS256 签发/校验，默认 24h 过期 |
+| `auth/users.js` | bcrypt 哈希存储；首次启动自动写入默认管理员，上线后强制改密 |
+| `auth/loginGuard.js` | 用户名维度 + IP 维度双计数器；连续失败触发临时锁定 |
+| `auth/validate.js` | 拒绝典型 SQLi 字符与超长输入 |
+| `auth/ssrfGuard.js` | 后台外联（如威胁情报）的目标域名白名单 |
+
+> 设计权衡：JWT 选择 Cookie 而非 `Authorization: Bearer`，是为了让前端 JS 拿不到 token，避免 XSS 直接窃取；CSRF 由 SameSite=Lax 阻断。
+
+---
+
+### 3.13 配置文件
 
 所有阈值集中在 `config.js`，支持通过管理后台动态修改（写回 Redis，网关定期读取）：
 
@@ -682,14 +762,29 @@ watch(() => stats.value?.history, (history) => {
 
 ### 6.1 接口列表
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `GET` | `/api/stats` | 获取当前统计快照 |
-| `GET` | `/api/bans` | 获取封禁 IP 列表（含剩余 TTL） |
-| `DELETE` | `/api/bans/:ip` | 手动解封指定 IP |
-| `POST` | `/api/bans` | 手动封禁指定 IP |
-| `GET` | `/api/config` | 获取当前规则配置 |
-| `PUT` | `/api/config` | 更新规则配置（热更新） |
+除 `/api/auth/login` 与 `/api/auth/me` 外，所有接口都需通过 `requireAuth` 中间件校验 JWT（HttpOnly Cookie 形式下发）。
+
+| 模块 | 方法 | 路径 | 说明 |
+|------|------|------|------|
+| 认证 | `POST` | `/api/auth/login` | 用户名/密码登录，下发 HttpOnly JWT Cookie |
+| 认证 | `POST` | `/api/auth/logout` | 清除登录态 |
+| 认证 | `GET`  | `/api/auth/me` | 获取当前登录用户信息 |
+| 认证 | `POST` | `/api/auth/change-password` | 修改密码 |
+| 认证 | `GET`  | `/api/auth/users` | 列出已注册用户（管理员） |
+| 统计 | `GET`  | `/api/stats` | 获取当前统计快照 |
+| 封禁 | `GET`  | `/api/bans` | 获取封禁 IP 列表（含剩余 TTL） |
+| 封禁 | `POST` | `/api/bans` | 手动封禁指定 IP |
+| 封禁 | `DELETE` | `/api/bans/:ip` | 手动解封指定 IP |
+| 配置 | `GET`  | `/api/config` | 获取当前规则配置 |
+| 配置 | `PUT`  | `/api/config` | 更新规则配置（热更新，10s 内生效） |
+| 规则 | `GET`  | `/api/rules/hits` | 获取每条规则的命中计数 |
+| 规则 | `POST` | `/api/rules/hits/reset` | 清零规则命中计数 |
+| 白名单 | `GET`  | `/api/whitelist` | 列出 IP/CIDR 白名单 |
+| 白名单 | `POST` | `/api/whitelist` | 新增白名单条目（IP 或 CIDR） |
+| 白名单 | `DELETE` | `/api/whitelist/:spec` | 删除白名单条目 |
+| 威胁情报 | `GET` | `/api/threat-intel/cves` | 获取最新 CVE 列表（CIRCL 缓存 5min） |
+| 威胁情报 | `GET` | `/api/threat-intel/iocs` | 获取 IOC 情报源 |
+| 威胁情报 | `GET` | `/api/threat-intel/summary` | 综合摘要（前端首屏） |
 
 ### 6.2 关键接口实现
 
@@ -940,41 +1035,67 @@ if __name__ == '__main__':
 shieldgate/
 ├── gateway/                        # 网关核心（:8080）
 │   ├── index.js                   # 入口，Express + 中间件链 + 反向代理
+│   ├── config.js                  # 配置（含从 Redis 热加载逻辑）
 │   ├── middleware/
+│   │   ├── whitelistCheck.js      # IP/CIDR 白名单放行
 │   │   ├── blacklistCheck.js      # 黑名单检查
 │   │   ├── uaCheck.js             # UA 辅助识别
+│   │   ├── geoTag.js              # GeoIP 国别标记 / 硬阻断
 │   │   ├── connectionLimit.js     # 并发连接限制
 │   │   ├── slowlorisDetect.js     # Slowloris 检测
-│   │   └── rateLimiter.js         # 滑动窗口限流
-│   ├── utils/
-│   │   ├── redis.js               # Redis 连接（ioredis 单例）
-│   │   ├── banIP.js               # 封禁/解封操作
-│   │   ├── getIP.js               # IP 获取工具
-│   │   └── stats.js               # 统计数据（EventEmitter）
-│   └── config.js                  # 配置（含从 Redis 热加载逻辑）
+│   │   ├── bodySizeLimit.js       # 请求体大小限制（静态+流式）
+│   │   ├── rateLimiter.js         # 滑动窗口限流（IP + CC 双维度）
+│   │   └── challengePage.js       # 人机校验挑战页
+│   └── utils/
+│       ├── redis.js               # Redis 连接（ioredis 单例）
+│       ├── banIP.js               # 封禁/解封操作
+│       ├── getIP.js               # IP 获取工具
+│       ├── stats.js               # 全局统计（EventEmitter）
+│       ├── ruleStats.js           # 各规则命中计数
+│       ├── whitelist.js           # 白名单存取（Redis 持久化）
+│       ├── cidr.js                # CIDR 匹配工具
+│       └── rateLimiterLua.js      # Lua 脚本版限流（原子计数）
 ├── admin/                          # 管理后台（:8081）
 │   ├── index.js                   # Express API 服务 + WebSocket
-│   ├── routes/
-│   │   ├── stats.js               # GET /api/stats
-│   │   ├── bans.js                # GET/POST/DELETE /api/bans
-│   │   └── config.js              # GET/PUT /api/config
-│   └── websocket.js               # WebSocket 推送服务
+│   ├── websocket.js               # WebSocket 推送服务
+│   ├── auth/
+│   │   ├── jwt.js                 # JWT 签发与校验
+│   │   ├── middleware.js          # requireAuth / parseToken
+│   │   ├── users.js               # 用户存储（bcrypt 哈希）
+│   │   ├── loginGuard.js          # 登录失败次数 / IP 锁定
+│   │   ├── validate.js            # 用户名/密码合法性校验
+│   │   └── ssrfGuard.js           # SSRF 防护（外联请求白名单）
+│   └── routes/
+│       ├── auth.js                # /api/auth/*
+│       ├── stats.js               # GET /api/stats
+│       ├── bans.js                # /api/bans
+│       ├── config.js              # /api/config
+│       ├── rules.js               # /api/rules/hits
+│       ├── whitelist.js           # /api/whitelist
+│       └── threat-intel.js        # /api/threat-intel/*
 ├── frontend/                       # Vue3 前端
 │   ├── src/
+│   │   ├── App.vue
 │   │   ├── views/
+│   │   │   ├── Login.vue          # 登录页
 │   │   │   ├── Dashboard.vue      # 监控大屏
-│   │   │   └── Rules.vue          # 规则配置页
-│   │   ├── composables/
-│   │   │   └── useWebSocket.js    # WebSocket 封装
-│   │   ├── components/
-│   │   │   ├── StatsCard.vue      # 顶部指标卡
-│   │   │   ├── RealtimeChart.vue  # 折线图
-│   │   │   └── BanList.vue        # 封禁列表
-│   │   └── App.vue
+│   │   │   ├── Attacks.vue        # 攻击事件流
+│   │   │   ├── Bans.vue           # 封禁管理
+│   │   │   ├── Whitelist.vue      # 白名单管理
+│   │   │   ├── Rules.vue          # 规则配置
+│   │   │   └── ThreatIntel.vue    # 威胁情报
+│   │   ├── composables/           # WebSocket 等组合式封装
+│   │   ├── components/            # 指标卡 / 折线图 / 列表等
+│   │   ├── api/                   # axios 封装 + 鉴权拦截
+│   │   └── styles.css
 │   └── vite.config.js
 ├── scripts/
 │   ├── flood.py                   # HTTP Flood 模拟（Locust）
-│   └── slowloris.py               # Slowloris 模拟
+│   ├── flood_simple.py            # 单脚本 Flood（无依赖版）
+│   ├── slowloris.py               # Slowloris 模拟
+│   ├── ddos7.py                   # 应用层 7 类攻击综合脚本
+│   └── watch_ban.sh               # 实时监控封禁列表
+├── docs/                           # 提交文档
 ├── nginx.conf                      # Nginx 配置
 ├── ecosystem.config.js             # PM2 配置
 ├── package.json
@@ -1007,24 +1128,14 @@ shieldgate/
 
 ### 10.3 后续优化方向
 
-- IP 白名单机制（保护运维 IP 不被误封）
-- 配置文件热加载（规则变更无需重启）
-- 告警通知（钉钉/飞书 Webhook，攻击时主动推送）
-- 访问日志持久化（写入文件，方便事后分析）
-- 多实例支持（并发连接计数迁移至 Redis）
+已落地（不再列入 TODO）：~~IP 白名单机制~~、~~配置热加载~~、~~GeoIP 标记/阻断~~、~~请求体大小限制~~、~~后台 JWT 鉴权 + 登录爆破防护~~、~~人机校验挑战页~~、~~规则命中计数~~、~~威胁情报集成（CVE/IOC）~~。
 
----
+待优化：
 
-## 11. 三天开发计划
-
-| 阶段 | 时间 | 任务 | 完成标志 |
-|------|------|------|---------|
-| Day 1 上午 | 4h | 项目初始化，Express 反向代理框架 | `curl localhost:8080` 能转发到后端 |
-| Day 1 下午 | 4h | `blacklistCheck` + `rateLimiter` + Redis 接入 | 限流封禁功能可用 |
-| Day 2 上午 | 4h | `uaCheck` + `connectionLimit` + `slowlorisDetect` | 四类攻击均有防护 |
-| Day 2 下午 | 4h | 管理后台 API + WebSocket 推送 | Postman 能调通所有接口 |
-| Day 3 上午 | 4h | Vue3 前端（大屏 + 配置页） | 前端能实时显示统计数据 |
-| Day 3 下午 | 4h | 攻击模拟脚本 + 联调 + 部署 + 录制 Demo | 可演示版本上线 |
+- 多实例部署：并发连接计数仍是单机内存 Map，跨实例需迁移至 Redis（注意原子性问题）
+- 告警通知：钉钉/飞书 Webhook，攻击事件主动推送
+- 访问日志持久化：当前仅有内存 ring buffer，需落盘以便事后取证
+- 挑战页升级：当前 JS 挑战仅能对抗简单脚本，对 headless 浏览器无效，可接入 PoW 或 hCaptcha
+- HTTPS 终止：网关层加载证书，避免后端业务暴露明文流量
 
 
-*ShieldGate 技术文档 v1.0 · 中国大学生计算机设计大赛 Web 应用赛道*

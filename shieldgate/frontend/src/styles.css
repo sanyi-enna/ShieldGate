@@ -553,6 +553,13 @@ mark.sg-mark {
 .ti-feed-summary {
   color: #8a93a6; font-size: 12px; line-height: 1.5;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  word-break: break-all;
+}
+.ti-feed-tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.ti-feed-time { color: #6b7588; font-size: 11px; font-family: 'SF Mono', Menlo, monospace; }
+.ti-feed-tag {
+  background: #1a2235; color: #8a93a6; padding: 1px 6px;
+  border-radius: 3px; font-size: 10px;
 }
 .ti-feed-empty {
   color: #6b7588; font-size: 12px; text-align: center;

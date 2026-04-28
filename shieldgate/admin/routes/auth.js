@@ -5,6 +5,7 @@ const { COOKIE_NAME } = require('../auth/middleware');
 const { checkLocks, recordFailure, clearFailures } = require('../auth/loginGuard');
 const { validateUsername, validatePassword, isSafe } = require('../auth/validate');
 const getIP = require('../../gateway/utils/getIP');
+const auditLog = require('../utils/auditLog');
 
 ensureDefault().catch((e) => console.error('[auth] ensureDefault failed:', e.message));
 
@@ -37,12 +38,21 @@ router.post('/login', async (req, res) => {
     username = validateUsername(body.username);
     password = validatePassword(body.password);
   } catch (e) {
+    auditLog.event('auth.login_invalid_input', req, {
+      attemptedUser: typeof body.username === 'string' ? body.username.slice(0, 64) : null,
+      reason: e.message,
+    });
     return res.status(400).json({ error: e.message, code: 'INVALID_INPUT' });
   }
 
   // —— 2. 锁定检查（防暴力枚举）——
   const lock = await checkLocks(username, ip);
   if (lock.locked) {
+    auditLog.event('auth.login_locked', req, {
+      attemptedUser: username,
+      scope: lock.scope,
+      retryAfter: lock.ttl,
+    });
     return res.status(429).json({
       error: lock.scope === 'user' ? '账户已临时锁定，请稍后再试' : 'IP 已被风控锁定',
       code: 'LOCKED',
@@ -55,6 +65,11 @@ router.post('/login', async (req, res) => {
   const ok = user && (await verifyPassword(user, password));
   if (!ok) {
     const { userFails, ipFails, slowDownMs } = await recordFailure(username, ip);
+    auditLog.event('auth.login_failed', req, {
+      attemptedUser: username,
+      userFails,
+      ipFails,
+    });
     // 故意延迟，让爆破速率不可控
     await sleep(slowDownMs);
     return res.status(401).json({
@@ -69,6 +84,10 @@ router.post('/login', async (req, res) => {
   await clearFailures(username, ip);
   const token = sign({ sub: username, role: user.role });
   setCookie(res, token);
+  auditLog.event('auth.login_success', req, {
+    user: username,
+    role: user.role,
+  });
   res.json({ success: true, user: { username, role: user.role }, expiresIn: EXPIRES_SEC });
 });
 

@@ -12,6 +12,7 @@ const authRouter = require('./routes/auth');
 const threatIntelRouter = require('./routes/threat-intel');
 const { requireAuth, parseToken } = require('./auth/middleware');
 const { verify } = require('./auth/jwt');
+const auditLog = require('./utils/auditLog');
 
 const PORT = Number(process.env.PORT || 8081);
 
@@ -34,6 +35,10 @@ app.use((req, _res, next) => {
 });
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'shieldgate-admin' }));
+
+// 审计日志：在鉴权之后挂载，便于 req.user 已被回填时记录操作者；
+// 仅写入后端日志文件（admin/utils/auditLog.js），不向前端暴露任何接口。
+app.use(auditLog.middleware);
 
 app.use('/api/auth', authRouter);
 
