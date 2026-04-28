@@ -13,6 +13,7 @@ const threatIntelRouter = require('./routes/threat-intel');
 const { requireAuth, parseToken } = require('./auth/middleware');
 const { verify } = require('./auth/jwt');
 const auditLog = require('./utils/auditLog');
+const logArchive = require('./utils/logArchive');
 
 const PORT = Number(process.env.PORT || 8081);
 
@@ -62,6 +63,7 @@ setupWebSocket(server);
 
 server.listen(PORT, () => {
   console.log(`[shieldgate] admin listening on :${PORT} (REST + WebSocket)`);
+  logArchive.start();
 });
 
 process.on('SIGTERM', () => server.close(() => process.exit(0)));

@@ -121,4 +121,4 @@ function event(type, req, extra = {}) {
   });
 }
 
-module.exports = { middleware, event, write };
+module.exports = { middleware, event, write, LOG_DIR };
